@@ -4,32 +4,36 @@ Schedules deletion of a YottaSrc server with a cancel window. When a deletion is
 message with a **🛑 Cancel deletion** button is sent. If nobody presses it before the grace period ends,
 a real Chrome browser logs in to `console.yottasrc.com` and deletes the server.
 
-## Deploy on a server (Docker)
+## Deploy on a server (systemd, Debian/Ubuntu)
 
 Every week at `WEEKLY_DAY WEEKLY_TIME` (in `TZ`) the bot sends a Cancel message for each server in
 `WEEKLY_SERVERS`; each one is deleted `GRACE_MINUTES` later unless you press Cancel.
 
 ```bash
-# on the server, in a copy of this repo
-cp .env.example .env && chmod 600 .env     # fill in credentials, WEEKLY_*, TZ, VNC_PASSWORD
-docker compose build                        # if Docker Hub is blocked: BASE_IMAGE=<mirror>/oven/bun:1.2.18-debian docker compose build
+# on the server
+sudo git clone <this-repo> /opt/get-task-delete-server   # or copy the folder there (without node_modules/ and data/)
+cd /opt/get-task-delete-server
+sudo ./deploy/install.sh        # apt packages, Bun, Google Chrome, user `deleteguard`, systemd unit `delete-guard`
 
-# one-time login, shown over VNC (the port is bound to the server's loopback only)
-docker compose run --rm --service-ports login
-#   on your machine: ssh -L 5900:127.0.0.1:5900 user@server, then open a VNC viewer at localhost:5900
-#   solve the captcha / email code in the browser; the session is stored in the `data` volume
+sudo cp .env.example .env && sudo nano .env               # credentials, WEEKLY_*, TZ, VNC_PASSWORD
+sudo chown root:deleteguard .env && sudo chmod 640 .env
 
-docker compose run --rm -it app dry-run <server>   # stops before the final confirm; or check Telegram screenshots
-docker compose up -d                                # start the bot + weekly scheduler
-docker compose logs -f app
+# one-time login over VNC (bound to the server's localhost only)
+sudo -u deleteguard ./deploy/login.sh
+#   on your computer: ssh -L 5900:127.0.0.1:5900 user@server, then a VNC viewer at localhost:5900
+#   solve the captcha / email code in the browser; the script exits when you're logged in
+
+sudo -u deleteguard xvfb-run -a bun src/cli.ts dry-run <server>   # stops before the final confirm
+sudo systemctl start delete-guard
+journalctl -u delete-guard -f
 ```
 
-Telegram `/next` shows the schedule and the next run. Set `DRY_RUN=false` in `.env` and run
-`docker compose up -d` again only after a dry run looks right.
+Telegram `/next` shows the schedule and the next run. Set `DRY_RUN=false` in `.env` and
+`sudo systemctl restart delete-guard` only after a dry run looks right.
 
-The container runs Chrome on a virtual display (Xvfb) because Cloudflare Turnstile rejects headless Chrome.
-If the saved session expires, the bot logs in again with your credentials and asks for any email code in Telegram.
-If that fails it reports the error, and you repeat the VNC login.
+Run every CLI command as `deleteguard` from the app folder, so it uses the same `data/` (DB + browser session).
+If the saved session expires, the bot logs in again with your credentials and asks for any email code in Telegram;
+if that fails it reports the error and you repeat `deploy/login.sh`.
 
 ## Local setup
 
