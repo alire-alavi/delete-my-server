@@ -1,0 +1,32 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-oven/bun:1.2.18-debian}
+    image: get-task-delete-server:latest
+    env_file: .env
+    volumes:
+      - data:/app/data
+    shm_size: 1gb # Chrome crashes with Docker's default 64MB /dev/shm
+    init: true
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # One-time manual login over VNC: docker compose run --rm --service-ports login
+  login:
+    image: get-task-delete-server:latest
+    profiles: [tools]
+    command: login
+    env_file: .env
+    volumes:
+      - data:/app/data
+    ports:
+      - "127.0.0.1:5900:5900" # loopback only; reach it through an SSH tunnel
+    shm_size: 1gb
+    init: true
+
+volumes:
+  data:
